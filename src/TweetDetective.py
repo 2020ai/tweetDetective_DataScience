@@ -5,7 +5,6 @@ import numpy as np
 import seaborn as sns
 import nltk
 import re
-import sys
 from twython import Twython
 from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import CountVectorizer
@@ -24,6 +23,11 @@ API_SECRET_KEY = "OW8cYRS69LUQ1gD5rKULGi4QtuBoj0OX5hRyJI5HVBbzTLZzam"
 STOP_WORDS = ["'d", "'ll", "'re", "'s", "'ve", 'could', 'might', 'must',
               "n't", 'need', 'sha', 'wo', 'would', "ca", "na", "rt", "like",
               'u', 'get', 'got']
+
+#logging details
+log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging.basicConfig(level=logging.INFO, format=log_fmt)
+logger = logging.getLogger(__name__)
 
 
 class TweetDetective():
@@ -210,7 +214,7 @@ class TweetDetective():
         # Tokenization
         return [word for word in tweet.split()]
 
-    def create_bag_of_words(self, tweets, max_df=1.0, min_df=1,
+    def create_bag_of_words(self, tweets, max_df=0.95, min_df=2,
                                 max_features=None):
         '''Vectorize the tweets using bag of words.
 
@@ -325,36 +329,61 @@ class TweetDetective():
         plt.tick_params(colors='silver')
         plt.tight_layout()
         # fig.savefig('sentiment_plot.png')
-        fig.savefig('sentiment_plot.png', facecolor=(
-            0.22, 0.23, 0.31, 1), edgecolor=(0.22, 0.23, 0.31, 1))
+        with open('sentiment_plot.png', 'w'):
+            fig.savefig('sentiment_plot.png', facecolor=(
+                0.22, 0.23, 0.31, 1), edgecolor=(0.22, 0.23, 0.31, 1))
+        
+    def run(self, search_query):
+        '''
+        '''
+        
+        try:
+            #tweetDetective = TweetDetective()
+            tweets_list = self.collect_tweets(
+                search_query=search_query, geocode="49.525238,-93.874023,4000km")
+            df = self.make_dataframe(tweets_list, search_query)
+            df['clean_text'] = df['tweet_text'].apply(
+                lambda text: self.clean_tweet_text(text, punc_flag=False,
+                                                            number_flag=False, special_char_flag=False))
+            logger.info('Running sentiment analysis...')
+            df['sentiment'] = df['clean_text'].apply(
+                lambda tweet: self.sentiment_analysis(tweet))
+            self.sentiment_plot(df['sentiment'])
+            return 0
+
+        except Exception as e:
+            logger.exception(e)
+            return -1
+
 
 
 
 if __name__ == '__main__':
     '''
     '''
-    #logging details
-    log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    logging.basicConfig(level=logging.INFO, format=log_fmt)
-    #logger = logging.getLogger(__name__)
-    logger = logging.getLogger(sys.argv[0])
+    # #logging details
+    # log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    # logging.basicConfig(level=logging.INFO, format=log_fmt)
+    # #logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(sys.argv[0])
 
     try:
         tweetDetective = TweetDetective()
-        query = input('Enter a search word (Example: Walmart): ')
-        #North America 49.525238,-93.874023,4000km
-        tweets_list = tweetDetective.collect_tweets(
-            search_query=query, geocode="49.525238,-93.874023,4000km")
-        df = tweetDetective.make_dataframe(tweets_list, query)
-        #df.to_csv('../../processed/tweets.csv')
-        #df = pd.read_csv('../data/processed/tweets.csv')
-        df['clean_text'] = df['tweet_text'].apply(
-            lambda text: tweetDetective.clean_tweet_text(text, punc_flag=False,
-                                        number_flag=False, special_char_flag=False))
-        logger.info('Running sentiment analysis...')
-        df['sentiment'] = df['clean_text'].apply(
-            lambda tweet: tweetDetective.sentiment_analysis(tweet))
-        tweetDetective.sentiment_plot(df['sentiment'])
+        tweetDetective.run('Trump')
+        # query = input('Enter a search word (Example: Walmart): ')
+        # #North America 49.525238,-93.874023,4000km
+        # tweets_list = tweetDetective.collect_tweets(
+        #     search_query=query, geocode="49.525238,-93.874023,4000km")
+        # df = tweetDetective.make_dataframe(tweets_list, query)
+        # #df.to_csv('../../processed/tweets.csv')
+        # #df = pd.read_csv('../data/processed/tweets.csv')
+        # df['clean_text'] = df['tweet_text'].apply(
+        #     lambda text: tweetDetective.clean_tweet_text(text, punc_flag=False,
+        #                                 number_flag=False, special_char_flag=False))
+        # logger.info('Running sentiment analysis...')
+        # df['sentiment'] = df['clean_text'].apply(
+        #     lambda tweet: tweetDetective.sentiment_analysis(tweet))
+        # tweetDetective.sentiment_plot(df['sentiment'])
 
     except Exception as e:
         logger.exception(e)
