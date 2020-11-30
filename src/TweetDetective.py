@@ -5,6 +5,8 @@ import numpy as np
 import seaborn as sns
 import nltk
 import re
+import io
+import base64
 from twython import Twython
 from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import CountVectorizer
@@ -39,10 +41,10 @@ class TweetDetective():
 
         logger.info('instantiating the TweetDetective object')
         self.search_query = search_query
-        self.tweets_df = pd.DataFrame()        
+        self.tweets_df = pd.DataFrame()
 
-    def collect_tweets(self, search_query='', geocode=None, result_type='recent', 
-                       num_of_page = 20, count = 100, since = None, until = None):
+    def collect_tweets(self, search_query='', geocode=None, result_type='recent',
+                       num_of_page=20, count=100, since=None, until=None):
         '''Collects a number of tweets using Twitter standard search API and
         returns a list of dictionaries each representing a tweet.
 
@@ -78,18 +80,17 @@ class TweetDetective():
         # Authentication
         try:
             twitter_obj = Twython(API_KEY, API_SECRET_KEY,
-                              ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
+                                  ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
 
             # Use Twitter standard API search
             tweet_result = twitter_obj.search(q=search_query, geocode=geocode,
-                                            result_type=result_type, count=count,
-                                            since=since, until=until,
-                                            include_entities='true',
-                                            tweet_mode='extended', lang='en')
+                                              result_type=result_type, count=count,
+                                              since=since, until=until,
+                                              include_entities='true',
+                                              tweet_mode='extended', lang='en')
         except Exception as e:
             logger.exception(e)
             return -1
-
 
         # In order to prevent redundant tweets explained here
         # https://developer.twitter.com/en/docs/tweets/timelines/guides/working-with-timelines
@@ -105,8 +106,7 @@ class TweetDetective():
                 # collect data exceeding available rate-limit
                 print(str(rate_limit)+' Rate limit!')
                 break
-            max_id = tweet_result['statuses'][len(
-                tweet_result['statuses']) - 1]['id']-1
+            max_id = tweet_result['statuses'][-1]['id']-1
 
             try:
                 tweet_result_per_page = twitter_obj.search(q=search_query, geocode=geocode,
@@ -133,20 +133,19 @@ class TweetDetective():
         '''
 
         hashtags = []
-        for i, term in enumerate(tweet):
+        for term in tweet:
             hashtags += term['text']+','
         return hashtags
 
     def make_dataframe(self, tweets_list, search_term):
         '''Gets the list of tweets and return it as a pandas DataFrame.
         '''
-        
+
         logger.info('Creating dataframe from tweets...')
-        self.tweets_df = pd.DataFrame()
         self.tweets_df['tweet_id'] = list(map(lambda tweet: tweet['id'],
-                                tweets_list))
+                                              tweets_list))
         self.tweets_df['user'] = list(map(lambda tweet: tweet['user']
-                            ['screen_name'], tweets_list))
+                                          ['screen_name'], tweets_list))
         self.tweets_df['time'] = list(
             map(lambda tweet: tweet['created_at'], tweets_list))
         self.tweets_df['tweet_text'] = list(
@@ -175,35 +174,35 @@ class TweetDetective():
 
         # remove the user
         if user_flag:
-            tweet=re.sub(r'@[w\w]+', ' ', tweet)
+            tweet = re.sub(r'@[w\w]+', ' ', tweet)
 
         # remove the urls
         if urls_flag:
-            tweet=re.sub(
+            tweet = re.sub(
                 r'(https|http)?:\/\/(\w|\.|\/|\?|\=|\&|\%)*\b', ' ', tweet)
 
         # replace the negations
-        tweet=re.sub(r"n't", ' not', tweet)
-        tweet=re.sub(r"N'T", ' NOT', tweet)
+        tweet = re.sub(r"n't", ' not', tweet)
+        tweet = re.sub(r"N'T", ' NOT', tweet)
 
         # remove punctuations
         if punc_flag:
-            tweet=re.sub(
+            tweet = re.sub(
                 '[!"$%&\'()*+,-./:;<=>?[\\]^_`{|}~•@’…”'']+', ' ', tweet)
 
         # remove numbers
         if number_flag:
-            tweet=re.sub('([0-9]+)', '', tweet)
+            tweet = re.sub('([0-9]+)', '', tweet)
 
         # remove special characters
         if special_char_flag:
-            tweet=re.sub(r'[^\w]', ' ', tweet)
+            tweet = re.sub(r'[^\w]', ' ', tweet)
 
         # remove double space
-        tweet=re.sub('\s+', ' ', tweet)
+        tweet = re.sub('\s+', ' ', tweet)
 
         if stop_word_flag:
-            tweet=' '.join([word for word in tweet.split() if word.lower(
+            tweet = ' '.join([word for word in tweet.split() if word.lower(
             ) not in stopwords.words('english')+STOP_WORDS])
 
         return tweet
@@ -215,7 +214,7 @@ class TweetDetective():
         return [word for word in tweet.split()]
 
     def create_bag_of_words(self, tweets, max_df=0.95, min_df=2,
-                                max_features=None):
+                            max_features=None):
         '''Vectorize the tweets using bag of words.
 
         Return the vectorized/bag of words of tweets
@@ -239,62 +238,62 @@ class TweetDetective():
         '''
 
         # Vectorization using Countvectorize
-        cv=CountVectorizer(analyzer=self.tokenize_tweet, max_df=max_df,
-                           min_df=min_df, max_features=max_features)
-        tweets_bow=cv.fit_transform(tweets)
-        feature_names=cv.get_feature_names()
+        cv = CountVectorizer(analyzer=self.tokenize_tweet, max_df=max_df,
+                             min_df=min_df, max_features=max_features)
+        tweets_bow = cv.fit_transform(tweets)
+        feature_names = cv.get_feature_names()
         return tweets_bow, feature_names
 
     def create_tfidf(self, tweets_bow):
         '''Create the TF-IDF of tweets
         '''
-        tfidf_transformer=TfidfTransformer().fit(tweets_bow)
-        tweets_tfidf=tfidf_transformer.transform(tweets_bow)
+        tfidf_transformer = TfidfTransformer().fit(tweets_bow)
+        tweets_tfidf = tfidf_transformer.transform(tweets_bow)
         return tweets_tfidf
 
     def sentiment_analysis(self, tweet):
-        '''Takes a tweet and return a dictionary of scores in 4 categories.
-        - Negative score
-        - Neutral score
-        - Positive score
-        - Compound score
+        '''Takes a tweet and return one of the 4 following categories.
+        - Negative 
+        - Neutral 
+        - Positive 
+        - Compound 
 
         Special characters and stopwords need to stay in the tweet.
         '''
 
         #create an instance of SentimentIntensityAnalyzer
-        sid=SentimentIntensityAnalyzer()
+        sid = SentimentIntensityAnalyzer()
         sentiment_scores = sid.polarity_scores(tweet)
         if sentiment_scores['compound'] < -0.2:
-            sentiment = 'Negative'
+            self.sentiment = 'Negative'
         elif -0.2 <= sentiment_scores['compound'] < 0:
-            sentiment = 'Neutral\nNegative'
+            self.sentiment = 'Neutral\nNegative'
         elif 0 <= sentiment_scores['compound'] <= 0.2:
-            sentiment = 'Neutral\nPositive'
+            self.sentiment = 'Neutral\nPositive'
         elif sentiment_scores['compound'] > 0.2:
-            sentiment = 'Positive'
+            self.sentiment = 'Positive'
         else:
-            sentiment = None
+            self.sentiment = None
 
-        return sentiment
+        return self.sentiment
 
     def topic_modeling(self, tweets, num_components=7,
                        num_words_per_topic=10,
                        random_state=42,
-                       max_df=1.0, min_df=1,
+                       max_df=0.95, min_df=2,
                        max_features=None):
         '''Get all the tweets and return the topics
         and the highest probability words per topic
         '''
 
         #create the bags of words
-        tweets_bow, feature_names=self.create_bag_of_words(tweets, max_df=max_df,
-                                                    min_df=min_df,
-                                                    max_features=max_features)
+        tweets_bow, feature_names = self.create_bag_of_words(tweets, max_df=max_df,
+                                                             min_df=min_df,
+                                                             max_features=max_features)
 
         #create an instace of LatentDirichletAllocation
         #lda=LatentDirichletAllocation(n_components=num_components,
-         #                             random_state=random_state)
+        #                             random_state=random_state)
         #lda.fit(tweets_bow)
 
         #grab the highest probability words per topic
@@ -312,44 +311,47 @@ class TweetDetective():
 
         '''
         pass
-    
-    def sentiment_plot(self, tweets_sentiment):
+
+    def plot_sentiment_analysis(self, tweets_sentiment):
         '''Create a plot of sentiment analysis.
         '''
-        
+
         logger.info('Creating a plot of sentiment...')
-        fig = plt.figure(figsize=(10, 6))
+        #fig = plt.figure(figsize=(10, 6))
+        img = io.BytesIO()
+        sns.countplot(tweets_sentiment, order=['Negative', 'Neutral\nNegative', 'Neutral\nPositive', 'Positive'],
+                      palette="RdPu")
         plt.rcParams['font.family'] = "arial"
         plt.rcParams['axes.facecolor'] = (0.22, 0.23, 0.31, 1)
         #plt.rcParams['axes.edgecolor'] = (0.22, 0.23, 0.31, 1)
-        sns.countplot(tweets_sentiment, order=['Negative', 'Neutral\nNegative', 'Neutral\nPositive', 'Positive'],
-                      palette="RdPu")
         plt.xlabel("")
         plt.ylabel("Count", color='silver')
         plt.tick_params(colors='silver')
         plt.tight_layout()
-        # fig.savefig('sentiment_plot.png')
-        with open('sentiment_plot.png', 'w'):
-            fig.savefig('sentiment_plot.png', facecolor=(
-                0.22, 0.23, 0.31, 1), edgecolor=(0.22, 0.23, 0.31, 1))
-        
+        plt.savefig(img, format='png', facecolor=(
+            0.22, 0.23, 0.31, 1), edgecolor=(0.22, 0.23, 0.31, 1))
+        img.seek(0)
+        figure_url = base64.b64encode(img.getvalue()).decode()
+        plt.close()
+        self.sentiment_plot = 'data:image/png;base64,{}'.format(figure_url)
+        return self.sentiment_plot
+
     def run(self, search_query):
         '''
         '''
-        
+
         try:
-            #tweetDetective = TweetDetective()
             tweets_list = self.collect_tweets(
                 search_query=search_query, geocode="49.525238,-93.874023,4000km")
             df = self.make_dataframe(tweets_list, search_query)
             df['clean_text'] = df['tweet_text'].apply(
                 lambda text: self.clean_tweet_text(text, punc_flag=False,
-                                                            number_flag=False, special_char_flag=False))
+                                                   number_flag=False, special_char_flag=False))
             logger.info('Running sentiment analysis...')
             df['sentiment'] = df['clean_text'].apply(
                 lambda tweet: self.sentiment_analysis(tweet))
-            self.sentiment_plot(df['sentiment'])
-            return 0
+            sentiment_plot = self.plot_sentiment_analysis(df['sentiment'])
+            return sentiment_plot
 
         except Exception as e:
             logger.exception(e)
@@ -357,39 +359,15 @@ class TweetDetective():
 
 
 
-
 if __name__ == '__main__':
     '''
     '''
-    # #logging details
-    # log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    # logging.basicConfig(level=logging.INFO, format=log_fmt)
-    # #logger = logging.getLogger(__name__)
-    # logger = logging.getLogger(sys.argv[0])
 
     try:
+        search_query = input('Enter your search term: ')
         tweetDetective = TweetDetective()
-        tweetDetective.run('Trump')
-        # query = input('Enter a search word (Example: Walmart): ')
-        # #North America 49.525238,-93.874023,4000km
-        # tweets_list = tweetDetective.collect_tweets(
-        #     search_query=query, geocode="49.525238,-93.874023,4000km")
-        # df = tweetDetective.make_dataframe(tweets_list, query)
-        # #df.to_csv('../../processed/tweets.csv')
-        # #df = pd.read_csv('../data/processed/tweets.csv')
-        # df['clean_text'] = df['tweet_text'].apply(
-        #     lambda text: tweetDetective.clean_tweet_text(text, punc_flag=False,
-        #                                 number_flag=False, special_char_flag=False))
-        # logger.info('Running sentiment analysis...')
-        # df['sentiment'] = df['clean_text'].apply(
-        #     lambda tweet: tweetDetective.sentiment_analysis(tweet))
-        # tweetDetective.sentiment_plot(df['sentiment'])
+        tweetDetective.run(search_query)
 
     except Exception as e:
         logger.exception(e)
-
-    
-
-
-
 
